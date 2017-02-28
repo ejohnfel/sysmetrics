@@ -1,0 +1,223 @@
+#!/bin/bash
+
+declare -a drives
+driveCount=0
+
+thermalpath="/sys/class/thermal"
+thermalzone="thermal_zone0"
+temperature=""
+
+TMPFILE="/tmp/sysmetric.tmp.${RANDOM}"
+PROFILE="none"
+LOGHOST="none"
+GRAPHITE="none"
+TEMP=0
+MEMINFO=0
+UPTIME=0
+
+# Usage
+# Parameters : None
+function Usage()
+{
+	echo -e "System Metrics Usage"
+	echo -e "===================="
+	echo -e "-h\t\t\tThis menu"
+	echo -e "-g [carbon-relay]\tSet receiving carbon relay for Graphite monitoring"
+	echo -e "-l [loghost]\t\tSet log host, localhost for local syslog, DNS/IP for remote"
+	echo -e "-u\t\t\tGet uptime/load factor (particularly load)"
+	echo -e "-m\t\t\tGet Memory info"
+	echo -e "-p [profile]\t\tSet profile to load"
+	echo -e "-t\t\t\tSet Temp metric"
+	echo -e "-d [drive spec]\t\tSet drive to monitor"
+}
+
+# Delete Temp File
+function RemoveTempFile()
+{
+	[ -e "${TMPFILE}" ] && rm "${TMPFILE}"
+}
+
+# SendToGraphite
+# Parameters : [metric category] [metric name] [metric value]
+function SendToGraphite()
+{
+	nc > /dev/null 2>&1
+
+	if [ $? -lt 127 -a ! "${GRAPHITE}" = "none" ]; then
+		echo "sysmetrics.${HOSTNAME}.${1}.${2} ${3} `date +%s`" | nc ${GRAPHITE} 2003
+	else
+		logger -p syslog.info -t "sysmetrics" "Attempt to send output to Graphite failed due to netcat not being available on system"
+	fi
+}
+
+# SubmitMetric
+# Parameters : [metric category] [metric name] [metric value]
+function SubmitMetric()
+{
+	if [ ! "${LOGHOST}" = "none" ]; then
+		mesg="${1} ${2} ${3}"
+
+		if [ "${LOGHOST}" = "local" -o "${LOGHOST}" = "localhost" -o "${LOGHOST}" = "127.0.0.1" ]; then
+			logger -p syslog.info -t "sysmetrics" "${mesg}"
+		else
+			logger -p syslog.info -n "${LOGHOST}" -t "sysmetrics" "${mesg}"
+		fi
+	fi
+
+	if [ ! "${GRAPHITE}" = "none" ]; then
+		SendToGraphite "${1}" "${2}" "${3}"
+	fi
+}
+
+# Load Profile
+# Parameters : [profile file path]
+function LoadProfile()
+{
+	while read label value; do
+		case "${label}" in
+		"temp"|"temperature")
+			TEMP=1 ;;
+		"drive")
+			drives[${driveCount}]="${value}"
+			driveCount=$(( ${driveCount} + 1 )) ;;
+		"graphite")
+			GRAPHITE="${value}" ;;
+		"loghost")
+			LOGHOST="${value}" ;;
+		"meminfo")
+			MEMINFO=1 ;;
+		"uptime")
+			UPTIME=1 ;;
+		esac
+	done < "${1}"
+}
+
+# Get Temperature
+# Parameters : None
+function GetTemp()
+{
+	vcgencmd > /dev/null 2>&1
+
+	if [ $? -lt 127 ]; then
+		temperature=$(vcgencmd measure_temp | cut -d"=" -f2 | cut -d"'" -f1)
+	else
+		if [ -e ${thermalpath}/${thermalzone}/temp ]; then
+			temperature=$(cat ${thermalpath}/${thermalzone}/temp)
+
+			if [ ${temperature} -gt 1000 ]; then
+				temperature=$((${temperature} / 1000))
+			fi
+		else
+			logger -p syslog.info -t "sysmetrics" "Thermal zone for this host does not exist, ${thermalpath}/${thermalzone}/temp"
+
+			return
+		fi
+	fi
+
+	SubmitMetric "temperature" "cpu" "${temperature}"
+}
+
+# Get Drive Usage
+# Parameters : None
+function GetDrives()
+{
+	RemoveTempFile
+
+	for ((index=0; index < ${#drives[@]}; ++index)); do
+		df -BM ${drives[${index}]} | tail -n +2 >> "${TMPFILE}"
+	done
+
+	while read drive size used available percent mounted rem; do
+		drv=$(basename "${drive}")
+
+		SubmitMetric "drive.space.used" "${drv}" "${used%%M}"
+		SubmitMetric "drive.space.available" "${drv}" "${available%%M}"
+		SubmitMetric "drive.space.percentused" "${drv}" "${percent%%%}"
+	done < "${TMPFILE}"
+
+	RemoveTempFile
+}
+
+# GetMemInfo
+# Paremeters : None
+function GetMemInfo()
+{
+	total=$(cat /proc/meminfo | grep "MemTotal" | tr -s " " | cut -d" " -f2)
+	free=$(cat /proc/meminfo | grep "MemFree" | tr -s " " | cut -d" " -f2)
+	available=$(cat /proc/meminfo | grep "MemAvailable" | tr -s " " | cut -d" " -f2)
+	SubmitMetric "memory" "total" "${total}"
+	SubmitMetric "memory" "free" "${free}"
+	SubmitMetric "memory" "available" "${available}"
+}
+
+# GetUptimeInfo
+# Parameters: None
+function GetUptimeInfo()
+{
+	RemoveTempFile
+
+	uptime > ${TMPFILE}
+
+	# time up 2 min, 2 users, load average: 2.45
+	# time up 3:11, 1 users, load average: 2.45
+
+	while read currentime state uptime field1 field2 field3 field4 field5 field6 field7 field8 remainder; do
+		if [ "${field1}" = "min," ]; then
+			# Less them an hour
+			mins=${uptime}
+			hrs=0
+			dec = $(echo ${mins} \/ 60 | bc -l | cut -d"." -f2)
+			uptime="${hrs}.${dec}"
+			loadfactor=${field6%%,}
+			users=${field2}
+		else
+			# Hour or more
+			hrs=$(echo ${uptime} | cut -d":" -f1)
+			mins=$(echo ${uptime} | cut -d":" -f2 | cut -d"," -f1)
+			dec=$(echo ${mins} \/ 60 | bc -l | cut -d"." -f2)
+			uptime="${hrs}.${dec}"
+			loadfactor=${field5%%,}
+			users=${field1}
+		fi
+
+		SubmitMetric "uptime" "uptime" "${uptime}"
+		SubmitMetric "uptime" "users" "${users}"
+		SubmitMetric "uptime" "load" "${loadfactor}"
+	done < ${TMPFILE}
+
+	RemoveTempFile
+}
+
+#
+# Main Loop
+#
+
+while [ ! "${1}" = "" ]; do
+	case "${1}" in
+	"-h")	Usage
+		exit 1 ;;
+	"-g")	GRAPHITE="${2}"
+		shift 1 ;;
+	"-l")	LOGHOST="${2}"
+		shift 1 ;;
+	"-u")	UPTIME=1 ;;
+	"-m")	MEMINFO=1 ;;
+	"-p")	PROFILE="${2}"
+		shift 1 ;;
+	"-t")	TEMP=1 ;;
+	"-d")	drives[${driveCount}]="${2}"
+		driveCount=$(( ${driveCount} + 1 ))
+		shift 1 ;;
+	esac
+
+	shift 1
+done
+
+if [ ! "${PROFILE}" = "none" ]; then
+	LoadProfile "${PROFILE}"
+fi
+
+[ ${TEMP} -gt 0 ] &&  GetTemp
+[ ${#drives[@]} -gt 0 ] && GetDrives
+[ ${MEMINFO} -gt 0 ] && GetMemInfo
+[ ${UPTIME} -gt 0 ] && GetUptimeInfo
