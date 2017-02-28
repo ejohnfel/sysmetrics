@@ -1,17 +1,21 @@
 #!/bin/bash
 
 declare -a drives
-driveCount=0
+declare -a thermalzones
+declare -a sensors
 
-thermalpath="/sys/class/thermal"
-thermalzone="thermal_zone0"
+driveCount=0
+zoneCount=0
+sensorCount=0
+
+defaultThermalSensor="/sys/class/thermal/thermal_zone0/temp,1000"
+
 temperature=""
 
 TMPFILE="/tmp/sysmetric.tmp.${RANDOM}"
 PROFILE="none"
 LOGHOST="none"
 GRAPHITE="none"
-TEMP=0
 MEMINFO=0
 UPTIME=0
 
@@ -21,14 +25,15 @@ function Usage()
 {
 	echo -e "System Metrics Usage"
 	echo -e "===================="
-	echo -e "-h\t\t\tThis menu"
-	echo -e "-g [carbon-relay]\tSet receiving carbon relay for Graphite monitoring"
-	echo -e "-l [loghost]\t\tSet log host, localhost for local syslog, DNS/IP for remote"
-	echo -e "-u\t\t\tGet uptime/load factor (particularly load)"
-	echo -e "-m\t\t\tGet Memory info"
-	echo -e "-p [profile]\t\tSet profile to load"
-	echo -e "-t\t\t\tSet Temp metric"
-	echo -e "-d [drive spec]\t\tSet drive to monitor"
+	echo -e "-h\t\t\t\tThis menu"
+	echo -e "-g [carbon-relay]\t\tSet receiving carbon relay for Graphite monitoring"
+	echo -e "-l [loghost]\t\t\tSet log host, localhost for local syslog, DNS/IP for remote"
+	echo -e "-u\t\t\t\tGet uptime/load factor (particularly load)"
+	echo -e "-m\t\t\t\tGet Memory info"
+	echo -e "-p [profile]\t\t\tSet profile to load"
+	echo -e "-t [sensor],[divisor],[label]\tSet Temp metric"
+	echo -e "-s [sensor],[label]\t\tRead generic sensor without interpretation"
+	echo -e "-d [drive spec]\t\t\tSet drive to monitor"
 }
 
 # Delete Temp File
@@ -57,11 +62,16 @@ function SubmitMetric()
 	if [ ! "${LOGHOST}" = "none" ]; then
 		mesg="${1} ${2} ${3}"
 
-		if [ "${LOGHOST}" = "local" -o "${LOGHOST}" = "localhost" -o "${LOGHOST}" = "127.0.0.1" ]; then
-			logger -p syslog.info -t "sysmetrics" "${mesg}"
-		else
-			logger -p syslog.info -n "${LOGHOST}" -t "sysmetrics" "${mesg}"
-		fi
+		case "${LOGHOST}" in
+		"local"|"localhost"|"127.0.0.1")
+			logger -p syslog.info -t "sysmetrics" "${mesg}" ;;
+		"print"|"console")
+			echo "${mesg}" ;;
+		"none")
+			[ 100 -gt 200 && echo "noOp" ;;
+		*)
+			logger -p syslog.info -n "${LOGHOST}" -t "sysmetrics" "${mesg}" ;;
+		esac
 	fi
 
 	if [ ! "${GRAPHITE}" = "none" ]; then
@@ -73,10 +83,19 @@ function SubmitMetric()
 # Parameters : [profile file path]
 function LoadProfile()
 {
-	while read label value; do
+	while read label value value2 value3; do
 		case "${label}" in
 		"temp"|"temperature")
-			TEMP=1 ;;
+			[ "${value}" = "" ] && value="${defaultThermalSensor}"
+			[ "${value2}" = "" ] && value2=1
+			[ "${value3}" = "" ] && value3="unspecified"
+
+			thermalzones[${zoneCount}]="${value},${value2},${value3}"
+			zoneCount=$(( ${zoneCount} + 1 )) ;;
+		"sensor")
+			[ "${value2}" = "" ] && value2="unspecified"
+			sensors[${sensorCount}]="${value},${value2}"
+			sensorCount=$(( ${sensorCount} + 1 )) ;;
 		"drive")
 			drives[${driveCount}]="${value}"
 			driveCount=$(( ${driveCount} + 1 )) ;;
@@ -92,29 +111,37 @@ function LoadProfile()
 	done < "${1}"
 }
 
-# Get Temperature
-# Parameters : None
-function GetTemp()
+# Read Temperature Sensors
+# Parameters : thermalzones Array
+function ReadTempSensors()
 {
-	vcgencmd > /dev/null 2>&1
+	for ((index=0; index < ${#thermalzones[@]}; ++index)); do
+		zone="${thermalzones[${index}]}"
+		sensor=$(echo "${zone}" | cut -d"," -f1)
+		divisor=$(echo "${zone}" | cut -d"," -f2)
+		label=$(echo "${zone}" | cut -d"," -f3)
 
-	if [ $? -lt 127 ]; then
-		temperature=$(vcgencmd measure_temp | cut -d"=" -f2 | cut -d"'" -f1)
-	else
-		if [ -e ${thermalpath}/${thermalzone}/temp ]; then
-			temperature=$(cat ${thermalpath}/${thermalzone}/temp)
+		case "${sensor}" in
+		"vcgencmd")	temperature=$(vcgencmd measure_temp | cut -d"=" -f2 | cut -d"'" -f1) ;;
+		*)		temperature=$(cat ${sensor})
+				[ ! ${divisor} = "1" ] && temperature=$(echo "${temperature}/${divisor}" | bc -l) ;;
+		esac
 
-			if [ ${temperature} -gt 1000 ]; then
-				temperature=$((${temperature} / 1000))
-			fi
-		else
-			logger -p syslog.info -t "sysmetrics" "Thermal zone for this host does not exist, ${thermalpath}/${thermalzone}/temp"
+		SubmitMetric "temperature" "${label}" "${temperature}"
+	done
+}
 
-			return
-		fi
-	fi
-
-	SubmitMetric "temperature" "cpu" "${temperature}"
+# Read Generic Sensors : Read generic sensors without interpretation (Temp, Fan Speed, chassis alarm, etc...)
+# Parameters : Sensors array
+function ReadSensors()
+{
+	for ((index=0; index < ${#sensors[@]}; ++index)); do
+		sensor="${sensors[${index}]}"
+		sensorPath=$(echo "${sensor}" | cut -d"," -f1)
+		label=$(echo "${sensor}" | cut -d"," -f2)
+		value=$(cat "${sensorPath}")
+		SubmitMetric "sensor" "${label}" "${value}"
+	done
 }
 
 # Get Drive Usage
@@ -204,7 +231,12 @@ while [ ! "${1}" = "" ]; do
 	"-m")	MEMINFO=1 ;;
 	"-p")	PROFILE="${2}"
 		shift 1 ;;
-	"-t")	TEMP=1 ;;
+	"-s")	sensors[${sensorCount}]="${2}"
+		sensorCount=$(( ${sensorCount} + 1))
+		shift 1 ;;
+	"-t")	thermalzones[${zoneCount}]="${2}"
+		zoneCount=$(( ${zoneCount} + 1 ))
+		shift 1 ;;
 	"-d")	drives[${driveCount}]="${2}"
 		driveCount=$(( ${driveCount} + 1 ))
 		shift 1 ;;
@@ -217,7 +249,8 @@ if [ ! "${PROFILE}" = "none" ]; then
 	LoadProfile "${PROFILE}"
 fi
 
-[ ${TEMP} -gt 0 ] &&  GetTemp
+[ ${#thermalzones[@]} -gt 0 ] &&  ReadTempSensors
+[ ${#sensors[@]} -gt 0 ] && ReadSensors
 [ ${#drives[@]} -gt 0 ] && GetDrives
 [ ${MEMINFO} -gt 0 ] && GetMemInfo
 [ ${UPTIME} -gt 0 ] && GetUptimeInfo
