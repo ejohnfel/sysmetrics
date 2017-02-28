@@ -33,7 +33,7 @@ function Usage()
 	echo -e "-p [profile]\t\t\tSet profile to load"
 	echo -e "-t [sensor],[divisor],[label]\tSet Temp metric"
 	echo -e "-s [sensor],[label]\t\tRead generic sensor without interpretation"
-	echo -e "-d [drive spec]\t\t\tSet drive to monitor"
+	echo -e "-d [drive spec],[label]\t\tSet drive to monitor"
 }
 
 # Delete Temp File
@@ -97,7 +97,8 @@ function LoadProfile()
 			sensors[${sensorCount}]="${value},${value2}"
 			sensorCount=$(( ${sensorCount} + 1 )) ;;
 		"drive")
-			drives[${driveCount}]="${value}"
+			[ "${value2}" = "" ] && value2=$(basename ${value})
+			drives[${driveCount}]="${value},${value2}"
 			driveCount=$(( ${driveCount} + 1 )) ;;
 		"graphite")
 			GRAPHITE="${value}" ;;
@@ -148,21 +149,25 @@ function ReadSensors()
 # Parameters : None
 function GetDrives()
 {
-	RemoveTempFile
+	local -a drvs
+	local -a lbls
 
 	for ((index=0; index < ${#drives[@]}; ++index)); do
-		df -BM ${drives[${index}]} | tail -n +2 >> "${TMPFILE}"
+		drv=$(echo "${drives[${index}]}" | cut -d"," -f1)
+		lbl=$(echo "${drives[${index}]}" | cut -d"," -f2)
+
+		drvs[${index}]=$(df -BM "${drv}" | tail -n +2)
+		lbls[${index}]="${lbl}"
 	done
 
-	while read drive size used available percent mounted rem; do
-		drv=$(basename "${drive}")
+	for ((index=0; index < ${#drvs[@]}; ++index)); do
+		IFS=" " read -r drive size used available percent mounted rem <<< "${drvs[${index}]}"
+		lbl=${lbls[${index}]}
 
-		SubmitMetric "drive.space.used" "${drv}" "${used%%M}"
-		SubmitMetric "drive.space.available" "${drv}" "${available%%M}"
-		SubmitMetric "drive.space.percentused" "${drv}" "${percent%%%}"
-	done < "${TMPFILE}"
-
-	RemoveTempFile
+		SubmitMetric "drive.space.used" "${lbl}" "${used%%M}"
+		SubmitMetric "drive.space.available" "${lbl}" "${available%%M}"
+		SubmitMetric "drive.space.percentused" "${lbl}" "${percent%%%}"
+	done
 }
 
 # GetMemInfo

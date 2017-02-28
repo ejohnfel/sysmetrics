@@ -10,8 +10,9 @@ temperature /sys/class/thermal/thermal_zone0/temp 1 cpu0
 #sensor /sys/class/hwmon/hwmon0/fan1_input cpu_fan_speed
 
 # Collect Information on listed drive(s)
-drive /dev/sda1
-drive /
+# drive [path] [label] (If no label provided, "basename [path]" is used
+drive /dev/sda1 
+drive / root
 
 # Graphite host can be an IP, DNS name, "localhost" or "none"
 graphite dobby.digitalwicky.biz
