@@ -6,11 +6,13 @@ MINORVER=1
 DEBUGMODE=0
 DIAGMODE=0
 
+decalre -a excessargs
 declare -a drives
 declare -a thermalzones
 declare -a sensors
 declare -a processes
 
+excessargsCount=0
 driveCount=0
 zoneCount=0
 sensorCount=0
@@ -397,6 +399,8 @@ while [ ! "${1}" = "" ]; do
 	"-xa")
 		CheckApps
 		exit 1 ;;
+	*)	excessargs[${excessargsCount}]="${1}"
+		excessargsCount=$(( ${excessargsCount} + 1 )) ;;
 	esac
 
 	shift 1
@@ -404,6 +408,11 @@ done
 
 if [ ! "${PROFILE}" = "none" ]; then
 	LoadProfile "${PROFILE}"
+elif [ ${excessargsCount} -gt 0 ]; then
+	# Quick fix for missing "-p" cla-flag
+	for ((index=0; index < ${#excessargs[@]}; ++index)); do
+		[ -f "${excessargs[${index}]}" ] && LoadProfile "${excessargs[${index}]}"
+	done
 fi
 
 if [ ${DEBUGMODE} -gt 0 ]; then
