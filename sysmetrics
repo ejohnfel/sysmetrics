@@ -172,14 +172,14 @@ function LoadProfile()
 
 # Heartbeat : Submit a selected non-zero node value to indicate host/sysmetric are still working
 # Parameters : [node #]
-function HeartBeat()
+function Heartbeat()
 {
 	SubmitMetric "heartbeat" "node" "${1}"
 }
 
 # CheckProcesses :  Check for a process, if visible in the process table
 # Parameters : None, uses processes array
-function CheckProcess()
+function CheckProcesses()
 {
 	for ((index=0; index < ${#processes[@]}; ++index)); do
 		IFS="," read -r pname puser plabel pvalue <<< "${processes[${index}]}"
@@ -422,4 +422,3 @@ fi
 [ ${#processes[@]} -gt 0 ] && CheckProcesses
 
 [ ${DEBUGMODE} -gt 0 ] && DebugMsg "Exitting Main Loop"
-
