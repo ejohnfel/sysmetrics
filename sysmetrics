@@ -343,7 +343,7 @@ function GetUptimeInfo()
 		dec=$(echo "${dec} + ${hrs}" | bc -l)
 		dec=$(echo "${dec} / 24" | bc -l)
 		days=$(echo "${field3} + ${dec}" | bc -l)
-	elif [ "${field5}" = "users," ]; then
+	elif [ "${field5}" = "users," -o "${field5}" = "user," ]; then
 		# time up 3:11, 1 users, load average: 2.45, 2.40, 0.01
 		field3="${field3%%,*}"
 		mins="${field3##*:}"
