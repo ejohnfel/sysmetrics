@@ -1,5 +1,10 @@
 #!/bin/bash
 
+MAJORVER=0
+MINORVER=1
+
+DEBUGMODE=0
+
 declare -a drives
 declare -a thermalzones
 declare -a sensors
@@ -23,9 +28,11 @@ UPTIME=0
 # Parameters : None
 function Usage()
 {
-	echo -e "System Metrics Usage"
-	echo -e "===================="
+	echo -e "System Metrics Usage v${MAJORVER}.${MINORVER}"
+	echo -e "==========================="
 	echo -e "-h\t\t\t\tThis menu"
+	echo -e "-v\t\t\t\tVersion Info"
+	echo -e "-x\t\t\t\tPlace in test mode, which means result printed to console"
 	echo -e "-g [carbon-relay]\t\tSet receiving carbon relay for Graphite monitoring"
 	echo -e "-l [loghost]\t\t\tSet log host, localhost for local syslog, DNS/IP for remote"
 	echo -e "-u\t\t\t\tGet uptime/load factor (particularly load)"
@@ -68,7 +75,7 @@ function SubmitMetric()
 		"print"|"console")
 			echo "${mesg}" ;;
 		"none")
-			[ 100 -gt 200 && echo "noOp" ;;
+			[ 100 -gt 200 ] && echo "noOp" ;;
 		*)
 			logger -p syslog.info -n "${LOGHOST}" -t "sysmetrics" "${mesg}" ;;
 		esac
@@ -228,6 +235,10 @@ while [ ! "${1}" = "" ]; do
 	case "${1}" in
 	"-h")	Usage
 		exit 1 ;;
+	"-v"|"--version")
+		echo -e "Version ${MAJORVER}.${MINORVER}"
+		exit 1 ;;
+	"-x")	DEBUGMODE=1 ;;
 	"-g")	GRAPHITE="${2}"
 		shift 1 ;;
 	"-l")	LOGHOST="${2}"
@@ -252,6 +263,11 @@ done
 
 if [ ! "${PROFILE}" = "none" ]; then
 	LoadProfile "${PROFILE}"
+fi
+
+if [ ${DEBUGMODE} -gt 0 ]; then
+	LOGHOST="print"
+	GRAPHITE="none"
 fi
 
 [ ${#thermalzones[@]} -gt 0 ] &&  ReadTempSensors
