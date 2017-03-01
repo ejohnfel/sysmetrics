@@ -190,16 +190,16 @@ function CheckProcesses()
 
 		if [ "${puser}" = "any" -o "${puser}" = "all" -o "${puser}" = "*" ]; then
 			ps --no-headers -C "${pname}" > ${TMPFILE} 2>&1
-			[ $? -eq 0 ] && presentValue = "${pvalue}"
+			[ $? -eq 0 ] && presentValue="${pvalue}"
 		else
 			ps --no headers -C "${pname}" -o user= | grep "${puser}" > ${TMPFILE} 2>&1
-			[ $? -eq 0 ] && presentValue = "${pvalue}"
+			[ $? -eq 0 ] && presentValue="${pvalue}"
 		fi
 
 		count=$(wc -l ${TMPFILE} | cut -d" " -f1)
 
-		SubmitMetric "process" "${plabel}" "${presentValue}"
-		SubmitMetric "process" "${plabel}" "${count}"
+		SubmitMetric "process" "${plabel}.present" "${presentValue}"
+		SubmitMetric "process" "${plabel}.instances" "${count}"
 
 		RemoveTempFile
 	done
