@@ -4,6 +4,7 @@ MAJORVER=0
 MINORVER=1
 
 DEBUGMODE=0
+DIAGMODE=0
 
 declare -a drives
 declare -a thermalzones
@@ -24,6 +25,13 @@ GRAPHITE="none"
 MEMINFO=0
 UPTIME=0
 
+# DebugMsg : Print Debug messages
+# Parameters : [mesg]
+function DebugMsg()
+{
+	[ ${DIAGMODE} -gt 0 ] && echo -e "Debug : ${1}"
+}
+
 # Usage
 # Parameters : None
 function Usage()
@@ -41,11 +49,38 @@ function Usage()
 	echo -e "-t [sensor],[divisor],[label]\tSet Temp metric"
 	echo -e "-s [sensor],[label]\t\tRead generic sensor without interpretation"
 	echo -e "-d [drive spec],[label]\t\tSet drive to monitor"
+
+	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "Usage"
+}
+
+# CheckApps : Check for 2 required apps, "netcat/nc" and "bc"
+function CheckApps()
+{
+	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "CheckApps"
+
+	if [ ! "${LOGNAME}" = "root" ]; then
+		echo -e "You must be root to run this"
+		return
+	fi
+
+	bc --version > /dev/null 2>&1
+
+	if [ $? -eq 127 ]; then
+		apt-get -y install bc
+	fi
+
+	nc > /dev/null 2>&1
+
+	if [ $? -eq 127 ]; then
+		apt-get -y install netcat-openbsd
+	fi
 }
 
 # Delete Temp File
 function RemoveTempFile()
 {
+	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "RemoveTempFile"
+
 	[ -e "${TMPFILE}" ] && rm "${TMPFILE}"
 }
 
@@ -53,6 +88,8 @@ function RemoveTempFile()
 # Parameters : [metric category] [metric name] [metric value]
 function SendToGraphite()
 {
+	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "SendToGraphite"
+
 	nc > /dev/null 2>&1
 
 	if [ $? -lt 127 -a ! "${GRAPHITE}" = "none" ]; then
@@ -66,6 +103,8 @@ function SendToGraphite()
 # Parameters : [metric category] [metric name] [metric value]
 function SubmitMetric()
 {
+	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "SubmitMetric"
+
 	if [ ! "${LOGHOST}" = "none" ]; then
 		mesg="${1} ${2} ${3}"
 
@@ -90,6 +129,8 @@ function SubmitMetric()
 # Parameters : [profile file path]
 function LoadProfile()
 {
+	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "LoadProfile"
+
 	while read label value value2 value3; do
 		case "${label}" in
 		"temp"|"temperature")
@@ -123,6 +164,8 @@ function LoadProfile()
 # Parameters : thermalzones Array
 function ReadTempSensors()
 {
+	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "ReadTempSensors"
+
 	for ((index=0; index < ${#thermalzones[@]}; ++index)); do
 		zone="${thermalzones[${index}]}"
 		sensor=$(echo "${zone}" | cut -d"," -f1)
@@ -143,6 +186,8 @@ function ReadTempSensors()
 # Parameters : Sensors array
 function ReadSensors()
 {
+	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "ReadSensors"
+
 	for ((index=0; index < ${#sensors[@]}; ++index)); do
 		sensor="${sensors[${index}]}"
 		sensorPath=$(echo "${sensor}" | cut -d"," -f1)
@@ -156,6 +201,8 @@ function ReadSensors()
 # Parameters : None
 function GetDrives()
 {
+	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "GetDrives"
+
 	local -a drvs
 	local -a lbls
 
@@ -181,6 +228,8 @@ function GetDrives()
 # Paremeters : None
 function GetMemInfo()
 {
+	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "GetMemInfo"
+
 	total=$(cat /proc/meminfo | grep "MemTotal" | tr -s " " | cut -d" " -f2)
 	free=$(cat /proc/meminfo | grep "MemFree" | tr -s " " | cut -d" " -f2)
 	available=$(cat /proc/meminfo | grep "MemAvailable" | tr -s " " | cut -d" " -f2)
@@ -193,43 +242,84 @@ function GetMemInfo()
 # Parameters: None
 function GetUptimeInfo()
 {
-	RemoveTempFile
+	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "GetUptimeInfo"
 
-	uptime > ${TMPFILE}
+	output="$(uptime)"
 
-	# time up 2 min, 2 users, load average: 2.45
-	# time up 3:11, 1 users, load average: 2.45
+	IFS=" " read -r field1 field2 field3 field4 field5 field6 field7 field8 field10 field11 field12 field13 <<< "${output}"
 
-	while read currentime state uptime field1 field2 field3 field4 field5 field6 field7 field8 remainder; do
-		if [ "${field1}" = "min," ]; then
-			# Less them an hour
-			mins=${uptime}
+	if [ "${field4}" = "min," ]; then
+		# time up 2 min, 2 users, load average: 2.45, 2.40, 0.01
+		mins="${field3}"
+		loadfactor="${field9%%,*}"
+		users="${field5}"
+		dec=$(echo "${mins} / 60" | bc -l)
+		dec=$(echo "${dec} / 24" | bc -l)
+		days="${dec}"
+	elif [ "${field4}" = "days," ]; then
+		# time up 5 days, 6 min, 1 user, load average: 2.45, 2.40, 0.01
+		# time up 5 days, 3:11, 1 user, load average: 1.0, 1.0, 1.0
+
+		if [ "${field6}" = "min," ]; then
+			mins="${field5}"
 			hrs=0
-			dec = $(echo ${mins} \/ 60 | bc -l | cut -d"." -f2)
-			uptime="${hrs}.${dec}"
-			loadfactor=${field6%%,}
-			users=${field2}
+			loadfactor="${field11%%,*}"
+			users="${field7}"
 		else
-			# Hour or more
-			hrs=$(echo ${uptime} | cut -d":" -f1)
-			mins=$(echo ${uptime} | cut -d":" -f2 | cut -d"," -f1)
-			dec=$(echo ${mins} \/ 60 | bc -l | cut -d"." -f2)
-			uptime="${hrs}.${dec}"
-			loadfactor=${field5%%,}
-			users=${field1}
+			field5="${field5%%,*}"
+			mins="${field5##*:}"
+			hrs="${field5%%:*}"
+			users="${field6}"
 		fi
 
-		SubmitMetric "uptime" "uptime" "${uptime}"
-		SubmitMetric "uptime" "users" "${users}"
-		SubmitMetric "uptime" "load" "${loadfactor}"
-	done < ${TMPFILE}
+		dec=$(echo "${mins} / 60" | bc -l)
+		dec=$(echo "${dec} + ${hrs}" | bc -l)
+		dec=$(echo "${dec} / 24" | bc -l)
+		days=$(echo "${field3} + ${dec}" | bc -l)
+	elif [ "${field4}" = "day," ]; then
+		# time up 1 day, x min, 1 user, load average: 1.0, 1.0, 1.0
+		# time up 1 day, 3:y, 1 user load average: 1.0, 1.0, 1.0
+		# Day and some hours/minutes
 
-	RemoveTempFile
+		if [ "${field6}" = "min," ]; then
+			mins="${field5}"
+			hrs=0
+			loadfactor="${field11%%,*}"
+			users="${field7}"
+		else
+			field5="${field5%%,*}"
+			mins="${field5##*:}"
+			hrs="${field5%%:*}"
+			loadfactor="${field10%%,*}"
+			users="${field6}"
+		fi
+
+		dec=$(echo "${mins} / 60" | bc -l)
+		dec=$(echo "${dec} + ${hrs}" | bc -l)
+		dec=$(echo "${dec} / 24" | bc -l)
+		days=$(echo "${field3} + ${dec}" | bc -l)
+	elif [ "${field5}" = "users," ]; then
+		# time up 3:11, 1 users, load average: 2.45, 2.40, 0.01
+		field3="${field3%%,*}"
+		mins="${field3##*:}"
+		hrs="${field3%%:*}"
+		dec=$(echo "${mins} / 60" | bc -l)
+		dec=$(echo "${dec} + ${hrs}" | bc -l)
+		days=$(echo "${dec} / 24" | bc -l)
+		loadfactor="${field8%%,*}"
+		users="${field4}"
+	fi
+
+	SubmitMetric "uptime" "uptime" "${days}"
+	SubmitMetric "uptime" "users" "${users}"
+	SubmitMetric "uptime" "load" "${loadfactor}"
 }
 
 #
 # Main Loop
 #
+
+[ ${DEBUGMODE} -gt 0 ] && DebugMsg "Entering Main Loop - Parsing Args"
 
 while [ ! "${1}" = "" ]; do
 	case "${1}" in
@@ -256,6 +346,9 @@ while [ ! "${1}" = "" ]; do
 	"-d")	drives[${driveCount}]="${2}"
 		driveCount=$(( ${driveCount} + 1 ))
 		shift 1 ;;
+	"-xa")
+		CheckApps
+		exit 1 ;;
 	esac
 
 	shift 1
@@ -266,8 +359,10 @@ if [ ! "${PROFILE}" = "none" ]; then
 fi
 
 if [ ${DEBUGMODE} -gt 0 ]; then
-	LOGHOST="print"
-	GRAPHITE="none"
+	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "Forcing DebugMode"
+
+	LOGHOST=print
+	GRAPHITE=none
 fi
 
 [ ${#thermalzones[@]} -gt 0 ] &&  ReadTempSensors
@@ -275,3 +370,5 @@ fi
 [ ${#drives[@]} -gt 0 ] && GetDrives
 [ ${MEMINFO} -gt 0 ] && GetMemInfo
 [ ${UPTIME} -gt 0 ] && GetUptimeInfo
+
+[ ${DEBUGMODE} -gt 0 ] && DebugMsg "Exitting Main Loop"
