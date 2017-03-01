@@ -9,10 +9,12 @@ DIAGMODE=0
 declare -a drives
 declare -a thermalzones
 declare -a sensors
+declare -a processes
 
 driveCount=0
 zoneCount=0
 sensorCount=0
+processCount=0
 
 defaultThermalSensor="/sys/class/thermal/thermal_zone0/temp,1000"
 
@@ -24,6 +26,7 @@ LOGHOST="none"
 GRAPHITE="none"
 MEMINFO=0
 UPTIME=0
+HEARTBEAT=none
 
 # DebugMsg : Print Debug messages
 # Parameters : [mesg]
@@ -41,6 +44,7 @@ function Usage()
 	echo -e "-h\t\t\t\tThis menu"
 	echo -e "-v\t\t\t\tVersion Info"
 	echo -e "-x\t\t\t\tPlace in test mode, which means result printed to console"
+	echo -e "-hb [node#]\t\t\tIssue heartbeat metric"
 	echo -e "-g [carbon-relay]\t\tSet receiving carbon relay for Graphite monitoring"
 	echo -e "-l [loghost]\t\t\tSet log host, localhost for local syslog, DNS/IP for remote"
 	echo -e "-u\t\t\t\tGet uptime/load factor (particularly load)"
@@ -49,6 +53,7 @@ function Usage()
 	echo -e "-t [sensor],[divisor],[label]\tSet Temp metric"
 	echo -e "-s [sensor],[label]\t\tRead generic sensor without interpretation"
 	echo -e "-d [drive spec],[label]\t\tSet drive to monitor"
+	echo -e "-pr [cmdlist],[user],[label],[id]\tLook for process"
 
 	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "Usage"
 }
@@ -131,7 +136,7 @@ function LoadProfile()
 {
 	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "LoadProfile"
 
-	while read label value value2 value3; do
+	while read label value value2 value3 value4; do
 		case "${label}" in
 		"temp"|"temperature")
 			[ "${value}" = "" ] && value="${defaultThermalSensor}"
@@ -148,6 +153,9 @@ function LoadProfile()
 			[ "${value2}" = "" ] && value2=$(basename ${value})
 			drives[${driveCount}]="${value},${value2}"
 			driveCount=$(( ${driveCount} + 1 )) ;;
+		"process")
+			processes[${processCount}]="${value},${value2},${value3},${value4}"
+			processCount=$(( ${processCount} + 1 )) ;;
 		"graphite")
 			GRAPHITE="${value}" ;;
 		"loghost")
@@ -156,8 +164,43 @@ function LoadProfile()
 			MEMINFO=1 ;;
 		"uptime")
 			UPTIME=1 ;;
+		"heartbeat")
+			HEARTBEAT="${value}" ;;
 		esac
 	done < "${1}"
+}
+
+# Heartbeat : Submit a selected non-zero node value to indicate host/sysmetric are still working
+# Parameters : [node #]
+function HeartBeat()
+{
+	SubmitMetric "heartbeat" "node" "${1}"
+}
+
+# CheckProcesses :  Check for a process, if visible in the process table
+# Parameters : None, uses processes array
+function CheckProcess()
+{
+	for ((index=0; index < ${#processes[@]}; ++index)); do
+		IFS="," read -r pname puser plabel pvalue <<< "${processes[${index}]}"
+
+		presentValue=0
+
+		if [ "${puser}" = "any" -o "${puser}" = "all" -o "${puser}" = "*" ]; then
+			ps --no-headers -C "${pname}" > ${TMPFILE} 2>&1
+			[ $? -eq 0 ] && presentValue = "${pvalue}"
+		else
+			ps --no headers -C "${pname}" -o user= | grep "${puser}" > ${TMPFILE} 2>&1
+			[ $? -eq 0 ] && presentValue = "${pvalue}"
+		fi
+
+		count=$(wc -l ${TMPFILE} | cut -d" " -f1)
+
+		SubmitMetric "process" "${plabel}" "${presentValue}"
+		SubmitMetric "process" "${plabel}" "${count}"
+
+		RemoveTempFile
+	done
 }
 
 # Read Temperature Sensors
@@ -329,6 +372,8 @@ while [ ! "${1}" = "" ]; do
 		echo -e "Version ${MAJORVER}.${MINORVER}"
 		exit 1 ;;
 	"-x")	DEBUGMODE=1 ;;
+	"-hb")	HEARTBEAT="${2}"
+		shift 1 ;;
 	"-g")	GRAPHITE="${2}"
 		shift 1 ;;
 	"-l")	LOGHOST="${2}"
@@ -336,6 +381,9 @@ while [ ! "${1}" = "" ]; do
 	"-u")	UPTIME=1 ;;
 	"-m")	MEMINFO=1 ;;
 	"-p")	PROFILE="${2}"
+		shift 1 ;;
+	"-pr")	processes[${processCount}]="${2}"
+		processCount=$(( ${processCount} + 1 ))
 		shift 1 ;;
 	"-s")	sensors[${sensorCount}]="${2}"
 		sensorCount=$(( ${sensorCount} + 1))
@@ -370,5 +418,8 @@ fi
 [ ${#drives[@]} -gt 0 ] && GetDrives
 [ ${MEMINFO} -gt 0 ] && GetMemInfo
 [ ${UPTIME} -gt 0 ] && GetUptimeInfo
+[ ! ${HEARTBEAT} = "none" ] && Heartbeat "${HEARTBEAT}"
+[ ${#processes[@]} -gt 0 ] && CheckProcesses
 
 [ ${DEBUGMODE} -gt 0 ] && DebugMsg "Exitting Main Loop"
+
