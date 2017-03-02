@@ -314,6 +314,7 @@ function GetUptimeInfo()
 			field5="${field5%%,*}"
 			mins="${field5##*:}"
 			hrs="${field5%%:*}"
+			loadfactor="${field10%%,*}"
 			users="${field6}"
 		fi
 
