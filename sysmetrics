@@ -291,7 +291,7 @@ function GetUptimeInfo()
 
 	output="$(uptime)"
 
-	IFS=" " read -r field1 field2 field3 field4 field5 field6 field7 field8 field10 field11 field12 field13 <<< "${output}"
+	IFS=" " read -r field1 field2 field3 field4 field5 field6 field7 field8 field9 field10 field11 field12 field13 <<< "${output}"
 
 	if [ "${field4}" = "min," ]; then
 		# time up 2 min, 2 users, load average: 2.45, 2.40, 0.01
