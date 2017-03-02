@@ -35,5 +35,7 @@ loghost none
 # heartbeat 24
 
 # Proccess Check : The present value should be a non-zero unique identifier for the process, "cmdlist" is same as "ps -C", see man page for "ps"
-# process [cmdlist] [username|*|any] [label] [present Value]
-# process apache2 any apache 24
+# when usng "expr" "cmdlist" can be a process name or an extended regular expression.
+# process [program|expr] [cmdlist] [username|*|any] [label] [present Value]
+# process program apache2 any apache 24
+# process expr logstash any logstash 20

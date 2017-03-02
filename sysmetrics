@@ -55,7 +55,7 @@ function Usage()
 	echo -e "-t [sensor],[divisor],[label]\tSet Temp metric"
 	echo -e "-s [sensor],[label]\t\tRead generic sensor without interpretation"
 	echo -e "-d [drive spec],[label]\t\tSet drive to monitor"
-	echo -e "-pr [cmdlist],[user],[label],[id]\tLook for process"
+	echo -e "-pr [program|expr],[cmdlist],[user],[label],[id]\tLook for process"
 
 	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "Usage"
 }
@@ -138,7 +138,7 @@ function LoadProfile()
 {
 	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "LoadProfile"
 
-	while read label value value2 value3 value4; do
+	while read label value value2 value3 value4 value5; do
 		case "${label}" in
 		"temp"|"temperature")
 			[ "${value}" = "" ] && value="${defaultThermalSensor}"
@@ -156,7 +156,7 @@ function LoadProfile()
 			drives[${driveCount}]="${value},${value2}"
 			driveCount=$(( ${driveCount} + 1 )) ;;
 		"process")
-			processes[${processCount}]="${value},${value2},${value3},${value4}"
+			processes[${processCount}]="${value},${value2},${value3},${value4},${value5}"
 			processCount=$(( ${processCount} + 1 )) ;;
 		"graphite")
 			GRAPHITE="${value}" ;;
@@ -184,16 +184,26 @@ function Heartbeat()
 function CheckProcesses()
 {
 	for ((index=0; index < ${#processes[@]}; ++index)); do
-		IFS="," read -r pname puser plabel pvalue <<< "${processes[${index}]}"
+		IFS="," read -r operation pname puser plabel pvalue <<< "${processes[${index}]}"
 
 		presentValue=0
 
-		if [ "${puser}" = "any" -o "${puser}" = "all" -o "${puser}" = "*" ]; then
-			ps --no-headers -C "${pname}" > ${TMPFILE} 2>&1
-			[ $? -eq 0 ] && presentValue="${pvalue}"
+		if [ "${operation}" = "program" ]; then
+			if [ "${puser}" = "any" -o "${puser}" = "all" -o "${puser}" = "*" ]; then
+				ps --no-headers -C "${pname}" > ${TMPFILE} 2>&1
+				[ $? -eq 0 ] && presentValue="${pvalue}"
+			else
+				ps --no headers -C "${pname}" -o user= | grep "${puser}" > ${TMPFILE} 2>&1
+				[ $? -eq 0 ] && presentValue="${pvalue}"
+			fi
 		else
-			ps --no headers -C "${pname}" -o user= | grep "${puser}" > ${TMPFILE} 2>&1
-			[ $? -eq 0 ] && presentValue="${pvalue}"
+			if [ "${puser}" = "any" -o "${puser}" = "all" -o "${puser}" = "*" ]; then
+				ps --no-headers -ef | egrep "${pname}" > ${TMPFILE} 2>&1
+				[ $? -eq 0 ] && presentValue="${pvalue}"
+			else
+				ps --no headers -ef | egrep "${pname}" | grep "${puser}" > ${TMPFILE} 2>&1
+				[ $? -eq 0 ] && presentValue="${pvalue}"
+			fi
 		fi
 
 		count=$(wc -l ${TMPFILE} | cut -d" " -f1)
