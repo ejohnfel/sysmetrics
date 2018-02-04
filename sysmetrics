@@ -66,7 +66,7 @@ function Usage()
 	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "Usage"
 }
 
-# CheckApps : Check for 2 required and 3 optional apps, "netcat/nc" and "bc"
+# CheckApps : Check for 2 required and 3 optional apps, netcat, nc and bc
 function CheckApps()
 {
 	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "CheckApps"
@@ -90,7 +90,7 @@ function CheckApps()
 
 	# nping or hping3 or traceroute
 
-	nping 127.0.0.1 > /dev/null 2>&1
+	nping -c 1 --tcp -p 0 127.0.0.1 > /dev/null 2>&1
 
 	if [ $? -eq 127 ]; then
 		apt-get -y install nmap
@@ -418,36 +418,36 @@ function GetPingHosts()
 {
 	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "GetPingHosts"
 
-	TMPOUT="/tmp/pinghost${RANDOM}.out"
-
 	for ((index=0; index < ${#pinghosts[@]}; ++index)); do
 		IFS="," read -r lbl host port <<< "${pinghosts[${index}]}"
 		if [ ! "${port}" = "" ]; then
-			nping -c 4 --tcp -p "${port}" "${host}" | egrep "Max rtt|RCVD" > "${TMPOUT}"
-			grep "Max rtt" "${TMPOUT}" > "${TMPOUT}.max"
-			grep "RCVD" "${TMPOUT}" | tail -n 1 > "${TMPOUT}.rcvd"
-			IFS=" " read f1 f2 f3 f4 f5 f6 flag f8 <<< "${TMPOUT}.rcvd"
-			IFS=" " read v1 v2 max v3 v4 min v5 v6 avgup <<< "${TMPOUT}.max"
-			IFS="m" read avg v2 <<< "${avgup}"
+			nping -c 4 --tcp -p "${port}" "${host}" | egrep "Max rtt|RCVD" > "${TMPFILE}"
+			grep "Max rtt" "${TMPFILE}" > "${TMPFILE}.max"
+			grep "RCVD" "${TMPFILE}" | tail -n 1 > "${TMPFILE}.rcvd"
+			IFS=" " read -r f1 f2 f3 f4 f5 f6 flag f8 <<< $( cat "${TMPFIL}.rcvd" )
+			IFS=" " read -r v1 v2 max v3 v4 min v5 v6 avgup <<< $( cat "${TMPFILE}.max" )
+			echo "${avgup}" > "${TMPFILE}.avgup"
+			IFS="m" read -r avg v2 <<< $( cat "${TMPFILE}.avgup" )
 
-			[ -e "${TMPOUT}.max" ] && rm "${TMPOUT}".max
-			[ -e "${TMPOUT}.max" ] && rm "${TMPOUT}".rcvd
+			[ -e "${TMPFILE}.max" ] && rm "${TMPFILE}.max"
+			[ -e "${TMPFILE}.rcvd" ] && rm "${TMPFILE}.rcvd"
+			[ -e "${TMPFILE}.avgup" ] && rm "${TMPFILE}.avgup"
 
 			[ "${avg}" = "N/A" ] && avg=0
 			[ "${flag}" = "RA" ] && avg=0
 
 			SubmitMetric "ping" "${lbl}" "${avg}"
 		else
-			ping -q -c 4 "${host}" | egrep "rtt" > "${TMPOUT}"
-
-			IFS=" " read line msg eql values tm <<< "${TMPOUT}"
-			IFS="/" read min avg max mdev <<< "${values}"
+			ping -q -c 2 "${host}" | egrep "rtt" > "${TMPFILE}"
+			IFS=" " read -r line msg eql values tm <<< $( cat "${TMPFILE}" )
+			echo "${values}" > "${TMPFILE}"
+			IFS="/" read -r min avg max mdev <<< $( cat "${TMPFILE}" )
 
 			SubmitMetric "ping" "${lbl}" "${avg}"
 		fi
 	done
 
-	[ -e "${TMPOUT}" ] && rm "${TMPOUT}"
+	RemoveTempFile
 }
 
 # Get Traceroutes :
@@ -456,8 +456,6 @@ function GetTraceroutes()
 {
 	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "GetTraceroutes"
 
-	TMPOUT="/tmp/tracert${RANDOM}.out"
-
 	for ((index=0; index < ${#traceroutes[@]}; ++index)); do
 		IFS="," read -r lbl host <<< "${traceroutes[${index}]}"
 
@@ -465,8 +463,6 @@ function GetTraceroutes()
 
 		SubmitMetric "traceroute" "${lbl}" "${pathlength}"
 	done
-
-	[ -e "${TMPOUT}" ] && rm "${TMPOUT}"
 }
 
 # Get Services :
@@ -475,34 +471,33 @@ function GetServices()
 {
 	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "GetServices"
 
-	TMPOUT="/tmp/services${RANDOM}.out"
-
 	for ((index=0; index < ${#services[@]}; ++index)); do
 		IFS="," read -r lbl service url sum presentvalue  <<< "${services[${index}]}"
 
 		FILESIZE=0
 		STATE=0
-		case "${service}" in
-			"http","https")
-				wgets -O "${TMPOUT}" "${url}" > /dev/null 2>&1
-				[ $? -ne 0 ] && STATE=1
-				FILESIZE=$(stat -c%s "${TMPOUT}")
-				;;
+
+		case ${service} in
+		"http"|"https")
+			wget -O "${TMPFILE}" "${url}" > /dev/null 2>&1
+			[ $? -ne 0 ] && STATE=1
+			FILESIZE=$(stat -c%s "${TMPFILE}")
+			;;
 		esac
 
 		SubmitMetric "service" "${lbl}_state" "${STATE}"
 		SubmitMetric "service" "${lbl}_size" "${FILESIZE}"
 
-		if [ ! "${sum}" = "" ]; then
-			md5sum=$(md5sum "${TMPOUT}" | cut-d" " -f1)
+		if [ ! "${sum}" = "" -a -e "${TMPFILE}" ]; then
+			mdFivesum=$(md5sum "${TMPFILE}" | cut -d" " -f1)
 
-			if [ ! ${md5sum} = {$sum} ]; then
+			if [ ! "${mdFivesum}" = "${sum}" ]; then
 				SubmitMetric "service" "${lbl}_sum" "${presentvalue}"
 			fi
 		fi
 	done
 
-	[ -e "${TMPOUT}" ] && rm "${TMPOUT}"
+	RemoveTempFile
 }
 
 #
@@ -518,7 +513,8 @@ while [ ! "${1}" = "" ]; do
 	"-v"|"--version")
 		echo -e "Version ${MAJORVER}.${MINORVER}"
 		exit 1 ;;
-	"-x")	DEBUGMODE=1 ;;
+	"-x")	DEBUGMODE=1
+		DIAGMODE=1 ;;
 	"-hb")	HEARTBEAT="${2}"
 		shift 1 ;;
 	"-g")	GRAPHITE="${2}"
