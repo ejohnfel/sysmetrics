@@ -1,7 +1,7 @@
 #!/bin/bash
 
 MAJORVER=0
-MINORVER=1
+MINORVER=20
 
 DEBUGMODE=0
 DIAGMODE=0
@@ -11,12 +11,18 @@ declare -a drives
 declare -a thermalzones
 declare -a sensors
 declare -a processes
+declare -a pinghosts
+declare -a traceroutes
+declare -a services
 
 excessargsCount=0
 driveCount=0
 zoneCount=0
 sensorCount=0
 processCount=0
+pinghostCount=0
+tracerouteCount=0
+servicesCount=0
 
 defaultThermalSensor="/sys/class/thermal/thermal_zone0/temp,1000"
 
@@ -60,7 +66,7 @@ function Usage()
 	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "Usage"
 }
 
-# CheckApps : Check for 2 required apps, "netcat/nc" and "bc"
+# CheckApps : Check for 2 required and 3 optional apps, "netcat/nc" and "bc"
 function CheckApps()
 {
 	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "CheckApps"
@@ -81,6 +87,29 @@ function CheckApps()
 	if [ $? -eq 127 ]; then
 		apt-get -y install netcat-openbsd
 	fi
+
+	# nping or hping3 or traceroute
+
+	nping 127.0.0.1 > /dev/null 2>&1
+
+	if [ $? -eq 127 ]; then
+		apt-get -y install nmap
+	fi
+
+	traceroute 127.0.0.1 > /dev/null 2>&1
+
+	if [ $? -eq 127 ]; then
+		apt-get -y install inetutils-traceroute
+	fi
+
+	TMPF=/tmp/${RANDOM}.tmp
+	wget -O ${TMPF} http://www.google.com > /dev/null 2>&1
+
+	if [ $? -eq 127 ]; then
+		apt-get -y install wget
+	fi
+
+	[ -e ${TMPF} ] && rm ${TMPF}
 }
 
 # Delete Temp File
@@ -138,7 +167,7 @@ function LoadProfile()
 {
 	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "LoadProfile"
 
-	while read label value value2 value3 value4 value5; do
+	while read label value value2 value3 value4 value5 value6; do
 		case "${label}" in
 		"temp"|"temperature")
 			[ "${value}" = "" ] && value="${defaultThermalSensor}"
@@ -168,6 +197,18 @@ function LoadProfile()
 			UPTIME=1 ;;
 		"heartbeat")
 			HEARTBEAT="${value}" ;;
+		"ping")
+			# lbl host port
+			pinghosts[${pinghostsCount}]="${value},${value2},${value3}"
+			pinghostsCount=$(( ${pinghostsCount} + 1 )) ;;
+		"traceroute")
+			# lbl host
+			traceroutes[${traceroutesCount}]="${value},${value2}"
+			traceroutesCount=$(( ${traceroutesCount} + 1  )) ;;
+		"service")
+			# lbl service url sum present-value
+			services[${servicesCount}]="${value},${value2},${value3},${value4},${value5}"
+			servicesCount=$(( ${servicesCount} + 1 )) ;;
 		esac
 	done < "${1}"
 }
@@ -371,6 +412,99 @@ function GetUptimeInfo()
 	SubmitMetric "uptime" "load" "${loadfactor}"
 }
 
+# Get Ping Hosts :
+# Parameters : none
+function GetPingHosts()
+{
+	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "GetPingHosts"
+
+	TMPOUT="/tmp/pinghost${RANDOM}.out"
+
+	for ((index=0; index < ${#pinghosts[@]}; ++index)); do
+		IFS="," read -r lbl host port <<< "${pinghosts[${index}]}"
+		if [ ! "${port}" = "" ]; then
+			nping -c 4 --tcp -p "${port}" "${host}" | egrep "Max rtt|RCVD" > "${TMPOUT}"
+			grep "Max rtt" "${TMPOUT}" > "${TMPOUT}.max"
+			grep "RCVD" "${TMPOUT}" | tail -n 1 > "${TMPOUT}.rcvd"
+			IFS=" " read f1 f2 f3 f4 f5 f6 flag f8 <<< "${TMPOUT}.rcvd"
+			IFS=" " read v1 v2 max v3 v4 min v5 v6 avgup <<< "${TMPOUT}.max"
+			IFS="m" read avg v2 <<< "${avgup}"
+
+			[ -e "${TMPOUT}.max" ] && rm "${TMPOUT}".max
+			[ -e "${TMPOUT}.max" ] && rm "${TMPOUT}".rcvd
+
+			[ "${avg}" = "N/A" ] && avg=0
+			[ "${flag}" = "RA" ] && avg=0
+
+			SubmitMetric "ping" "${lbl}" "${avg}"
+		else
+			ping -q -c 4 "${host}" | egrep "rtt" > "${TMPOUT}"
+
+			IFS=" " read line msg eql values tm <<< "${TMPOUT}"
+			IFS="/" read min avg max mdev <<< "${values}"
+
+			SubmitMetric "ping" "${lbl}" "${avg}"
+		fi
+	done
+
+	[ -e "${TMPOUT}" ] && rm "${TMPOUT}"
+}
+
+# Get Traceroutes :
+# Parameters : none
+function GetTraceroutes()
+{
+	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "GetTraceroutes"
+
+	TMPOUT="/tmp/tracert${RANDOM}.out"
+
+	for ((index=0; index < ${#traceroutes[@]}; ++index)); do
+		IFS="," read -r lbl host <<< "${traceroutes[${index}]}"
+
+		pathlength=$(traceroute "${host}" | egrep -v "traceroute" | wc -l )
+
+		SubmitMetric "traceroute" "${lbl}" "${pathlength}"
+	done
+
+	[ -e "${TMPOUT}" ] && rm "${TMPOUT}"
+}
+
+# Get Services :
+# Parameters : none
+function GetServices()
+{
+	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "GetServices"
+
+	TMPOUT="/tmp/services${RANDOM}.out"
+
+	for ((index=0; index < ${#services[@]}; ++index)); do
+		IFS="," read -r lbl service url sum presentvalue  <<< "${services[${index}]}"
+
+		FILESIZE=0
+		STATE=0
+		case "${service}" in
+			"http","https")
+				wgets -O "${TMPOUT}" "${url}" > /dev/null 2>&1
+				[ $? -ne 0 ] && STATE=1
+				FILESIZE=$(stat -c%s "${TMPOUT}")
+				;;
+		esac
+
+		SubmitMetric "service" "${lbl}_state" "${STATE}"
+		SubmitMetric "service" "${lbl}_size" "${FILESIZE}"
+
+		if [ ! "${sum}" = "" ]; then
+			md5sum=$(md5sum "${TMPOUT}" | cut-d" " -f1)
+
+			if [ ! ${md5sum} = {$sum} ]; then
+				SubmitMetric "service" "${lbl}_sum" "${presentvalue}"
+			fi
+		fi
+	done
+
+	[ -e "${TMPOUT}" ] && rm "${TMPOUT}"
+}
+
 #
 # Main Loop
 #
@@ -440,5 +574,8 @@ fi
 [ ${UPTIME} -gt 0 ] && GetUptimeInfo
 [ ! ${HEARTBEAT} = "none" ] && Heartbeat "${HEARTBEAT}"
 [ ${#processes[@]} -gt 0 ] && CheckProcesses
+[ ${#pinghosts[@]} -gt 0 ] && GetPingHosts
+[ ${#traceroutes[@]} -gt 0 ] && GetTraceroutes
+[ ${#services[@]} -gt 0 ] && GetServices
 
 [ ${DEBUGMODE} -gt 0 ] && DebugMsg "Exitting Main Loop"

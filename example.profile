@@ -31,11 +31,36 @@ loghost none
 # uptime
 
 # Heartbeat flag : node value should be a non-zero unique identifier for the given host
-# heartbeast [node #]
+# heartbeat [node #]
 # heartbeat 24
 
-# Proccess Check : The present value should be a non-zero unique identifier for the process, "cmdlist" is same as "ps -C", see man page for "ps"
+# Proccess Check : The present value should be a non-zero unique identifier for the process which will be represented,
+# as a line on the Y axis of the grid, "cmdlist" is same as "ps -C", see man page for "ps"
 # when usng "expr" "cmdlist" can be a process name or an extended regular expression.
 # process [program|expr] [cmdlist] [username|*|any] [label] [present Value]
 # process program apache2 any apache 24
 # process expr logstash any logstash 20
+
+# Ping To Host : Initiates a ICMP or protocol ping to a destination host for a given interval and optionally a port
+# *** Note : For protocol pings, either NPING or HPING3 is required, if not available, this command returns transit time
+# ping [label] [ip/hostname] [port]
+# ping mysqlsrv_db1 database1.myhost.local
+# ping https_srv www.myhost.local 443
+
+# Trace Route : This command trace routes to a host (if traceroute is available), returning the length of the path
+# traceroute [label] [host]
+# traceroute mysqlsrv_db1 database1.myhost.local
+
+# Service Test : Test a given service (http, https, ftp, ssh)
+# *** Note : This command requires the availability of tools for each service
+# http/https : Requires wget
+# ftp : Requires ftp client
+# ssh : requires ssh client
+#
+# This command returns 2 values, up or down and size of returned contents. If an md5 check sum is supplied
+# then if the content's sum does not match the given sum, then the present value is returned, otherwise zero.
+# The present value should uniquely identify the service on the graph.
+# service [label] [service] [url] [md5sum] [present-value]
+# service www_http http http://www.myhost.local
+# service www_http http http://www.myhost.local 99264924923894 24
+
