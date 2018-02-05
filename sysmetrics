@@ -421,11 +421,12 @@ function GetPingHosts()
 	for ((index=0; index < ${#pinghosts[@]}; ++index)); do
 		IFS="," read -r lbl host port <<< "${pinghosts[${index}]}"
 		if [ ! "${port}" = "" ]; then
-			nping -c 4 --tcp -p "${port}" "${host}" | egrep "Max rtt|RCVD" > "${TMPFILE}"
+			nping -c 2 --tcp -p "${port}" "${host}" | egrep "Max rtt|RCVD" > "${TMPFILE}"
 			grep "Max rtt" "${TMPFILE}" > "${TMPFILE}.max"
 			grep "RCVD" "${TMPFILE}" | tail -n 1 > "${TMPFILE}.rcvd"
 			IFS=" " read -r f1 f2 f3 f4 f5 f6 flag f8 <<< $( cat "${TMPFIL}.rcvd" )
-			IFS=" " read -r v1 v2 max v3 v4 min v5 v6 avgup <<< $( cat "${TMPFILE}.max" )
+			IFS=" " read -r v1 v2 max s1 v3 v4 min s2 v5 v6 avgup <<< $( cat "${TMPFILE}.max" )
+
 			echo "${avgup}" > "${TMPFILE}.avgup"
 			IFS="m" read -r avg v2 <<< $( cat "${TMPFILE}.avgup" )
 
