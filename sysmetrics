@@ -442,9 +442,10 @@ function GetPingHosts()
 			ping -q -c 2 "${host}" | egrep "rtt" > "${TMPFILE}"
 			IFS=" " read -r line msg eql values tm <<< $( cat "${TMPFILE}" )
 			echo "${values}" > "${TMPFILE}"
-			IFS="/" read -r min avg max mdev <<< $( cat "${TMPFILE}" )
 
-			SubmitMetric "ping" "${lbl}" "${avg}"
+			while IFS="/" read -r min avg max mdev; do
+				SubmitMetric "ping" "${lbl}" "${avg}"
+			done < "${TMPFILE}"
 		fi
 	done
 
