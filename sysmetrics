@@ -242,7 +242,7 @@ function CheckProcesses()
 				ps --no-headers -ef | egrep "${pname}" > ${TMPFILE} 2>&1
 				[ $? -eq 0 ] && presentValue="${pvalue}"
 			else
-				ps --no headers -ef | egrep "${pname}" | grep "${puser}" > ${TMPFILE} 2>&1
+				ps --no-headers -ef | egrep "${pname}" | grep "${puser}" > ${TMPFILE} 2>&1
 				[ $? -eq 0 ] && presentValue="${pvalue}"
 			fi
 		fi
