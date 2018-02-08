@@ -234,7 +234,7 @@ function CheckProcesses()
 				ps --no-headers -C "${pname}" > ${TMPFILE} 2>&1
 				[ $? -eq 0 ] && presentValue="${pvalue}"
 			else
-				ps --no headers -C "${pname}" -o user= | grep "${puser}" > ${TMPFILE} 2>&1
+				ps --no-headers -C "${pname}" -o user= | grep "${puser}" > ${TMPFILE} 2>&1
 				[ $? -eq 0 ] && presentValue="${pvalue}"
 			fi
 		else
