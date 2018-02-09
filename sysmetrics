@@ -1,7 +1,7 @@
 #!/bin/bash
 
 MAJORVER=0
-MINORVER=25
+MINORVER=30
 
 DEBUGMODE=0
 DIAGMODE=0
@@ -38,6 +38,9 @@ HEARTBEAT=none
 PINGCOUNT=2
 PORTPING=nping
 
+PROGNAME=sysmetrics
+REPOSITORY=https://github.com/ejohnfel/${PROGNAME}
+
 # DebugMsg : Print Debug messages
 # Parameters : [mesg]
 function DebugMsg()
@@ -45,15 +48,49 @@ function DebugMsg()
 	[ ${DIAGMODE} -gt 0 ] && echo -e "Debug : ${1}"
 }
 
+# MyVersion : Get/Set Version Info
+function MyVersion()
+{
+	echo "Version ${sysmetricsver}"
+}
+
+# Update : Update App
+# Parameters : none
+function UpdateMe()
+{
+	pushd /tmp/ > /dev/null
+
+	git clone ${REPOSITORY} > /dev/null 2>&1
+
+	cd ${PROGNAME}
+
+	current=$( md5sum "/usr/local/bin/${PROGNAME}" | cut -d" " -f1 )
+	cloned=$( md5sum "${PROGNAME}" | cut -d" " -f1 )
+
+	if [ ! "${cloned}" = "${current}" ]; then
+		echo -e "Downloaded install appears to be different, running install"
+		make install > /dev/null 2>&1
+	else
+		echo -e "Current install and downloaded install are the same, skipping"
+	fi
+
+	cd ..
+
+	rm -Rf ${PROGNAME}
+
+	popd > /dev/null
+}
+
 # Usage
 # Parameters : None
 function Usage()
 {
-	echo -e "System Metrics Usage v${MAJORVER}.${MINORVER}"
+	echo -e "System Metrics Usage v${sysmetricsver}"
 	echo -e "==========================="
 	echo -e "-h\t\t\t\tThis menu"
 	echo -e "-v\t\t\t\tVersion Info"
 	echo -e "-x\t\t\t\tPlace in test mode, which means result printed to console"
+	echo -e "-update\t\t\t\tUpdate install"
 	echo -e "-hb [node#]\t\t\tIssue heartbeat metric"
 	echo -e "-g [carbon-relay]\t\tSet receiving carbon relay for Graphite monitoring"
 	echo -e "-l [loghost]\t\t\tSet log host, localhost for local syslog, DNS/IP for remote"
@@ -61,7 +98,7 @@ function Usage()
 	echo -e "-m\t\t\t\tGet Memory info"
 	echo -e "-p [profile]\t\t\tSet profile to load"
 	echo -e "-t [sensor],[divisor],[label]\tSet Temp metric"
-	echo -e "-s [sensor],[label]\t\tRead generic sensor without interpretation"
+	echo -e "-s[sensor],[label]\t\tRead generic sensor without interpretation"
 	echo -e "-d [drive spec],[label]\t\tSet drive to monitor"
 	echo -e "-pr [program|expr],[cmdlist],[user],[label],[id]\tLook for process"
 
@@ -507,14 +544,20 @@ function GetServices()
 # Main Loop
 #
 
+sysmetricsver="${MAJORVER}.${MINORVER}"
+export sysmetricsver
+
 [ ${DEBUGMODE} -gt 0 ] && DebugMsg "Entering Main Loop - Parsing Args"
 
 while [ ! "${1}" = "" ]; do
 	case "${1}" in
 	"-h")	Usage
 		exit 1 ;;
+	"-update")
+		UpdateMe
+		exit 1 ;;
 	"-v"|"--version")
-		echo -e "Version ${MAJORVER}.${MINORVER}"
+		MyVersion
 		exit 1 ;;
 	"-x")	DEBUGMODE=1
 		DIAGMODE=1 ;;
