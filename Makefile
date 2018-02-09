@@ -1,6 +1,6 @@
 sysmetricfiles = sysmetrics
 installfolder = /usr/local/bin
-prereqs = bc nmap hping3 traceroute netcat wget md5sum git
+prereqs = bc nmap hping3 traceroute netcat wget git
 
 install: $(sysmetricfiles)
 ifeq "$(LOGNAME)" "root"
