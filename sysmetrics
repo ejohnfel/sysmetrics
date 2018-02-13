@@ -178,7 +178,7 @@ function SendToGraphite()
 
 		[ ${DIAGMODE} -gt 0 ] && echo "Submitting : ${DATAPKT}"
 
-		[ ${NETCATWAIT} -gt 0 ] && FLAGS="-w ${NETCATTIMEOUT}"
+		[ ${NETCATWAIT} -gt 0 ] && FLAGS="-w ${NETCATWAIT}"
 		echo "${DATAPKT}" | nc ${FLAGS} ${GRAPHITE} ${GRAPHITEPORT}
 	else
 		logger -p syslog.info -t "sysmetrics" "Attempt to send output to Graphite failed due to netcat not being available on system"
