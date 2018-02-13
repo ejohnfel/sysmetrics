@@ -16,7 +16,8 @@ drive /dev/sda1
 drive / root
 
 # Graphite host can be an IP, DNS name, "localhost" or "none"
-# graphite [ip|dns]
+# Port is optional and defaults to tcp/2003
+# graphite [ip|dns] [port]
 graphite dobby.digitalwicky.biz
 
 # Log hosts can be, "local", "localhost", an IP or DNS address, or simply, "none"

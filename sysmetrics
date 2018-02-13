@@ -32,11 +32,14 @@ TMPFILE="/tmp/sysmetric.tmp.${RANDOM}"
 PROFILE="none"
 LOGHOST="none"
 GRAPHITE="none"
+GRAPHITEPORT=2003
 MEMINFO=0
 UPTIME=0
 HEARTBEAT=none
 PINGCOUNT=2
 PORTPING=nping
+NETCATWAIT=no
+NETCATTIMEOUT=2
 
 PROGNAME=sysmetrics
 REPOSITORY=https://github.com/ejohnfel/${PROGNAME}
@@ -45,7 +48,7 @@ REPOSITORY=https://github.com/ejohnfel/${PROGNAME}
 # Parameters : [mesg]
 function DebugMsg()
 {
-	[ ${DIAGMODE} -gt 0 ] && echo -e "Debug : ${1}"
+	[ ${DEBUGMODE} -gt 0 ] && echo -e "Debug : ${1}"
 }
 
 # MyVersion : Get/Set Version Info
@@ -90,6 +93,8 @@ function Usage()
 	echo -e "-h\t\t\t\tThis menu"
 	echo -e "-v\t\t\t\tVersion Info"
 	echo -e "-x\t\t\t\tPlace in test mode, which means result printed to console"
+	echo -e "-xx\t\t\t\tPlace in diag mode, i.e. Print every action and still submit data"
+	echo -e "-nw\t\t\t\tUse 'wait' mode for netcat"
 	echo -e "-update\t\t\t\tUpdate install"
 	echo -e "-hb [node#]\t\t\tIssue heartbeat metric"
 	echo -e "-g [carbon-relay]\t\tSet receiving carbon relay for Graphite monitoring"
@@ -102,13 +107,13 @@ function Usage()
 	echo -e "-d [drive spec],[label]\t\tSet drive to monitor"
 	echo -e "-pr [program|expr],[cmdlist],[user],[label],[id]\tLook for process"
 
-	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "Usage"
+	DebugMsg "Usage"
 }
 
 # CheckApps : Check for 2 required and 3 optional apps, netcat, nc and bc
 function CheckApps()
 {
-	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "CheckApps"
+	DebugMsg "CheckApps"
 
 	if [ ! "${LOGNAME}" = "root" ]; then
 		echo -e "You must be root to run this"
@@ -154,7 +159,7 @@ function CheckApps()
 # Delete Temp File
 function RemoveTempFile()
 {
-	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "RemoveTempFile"
+	DebugMsg "RemoveTempFile"
 
 	[ -e "${TMPFILE}" ] && rm "${TMPFILE}"
 }
@@ -163,12 +168,18 @@ function RemoveTempFile()
 # Parameters : [metric category] [metric name] [metric value]
 function SendToGraphite()
 {
-	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "SendToGraphite"
+	DebugMsg "SendToGraphite"
 
 	nc > /dev/null 2>&1
 
 	if [ $? -lt 127 -a ! "${GRAPHITE}" = "none" ]; then
-		echo "sysmetrics.${HOSTNAME}.${1}.${2} ${3} `date +%s`" | nc ${GRAPHITE} 2003
+		FLAGS=""
+		DATAPKT="sysmetrics.${HOSTNAME}.${2}.${2} ${3} `date +%s`"
+
+		[ ${DIAGMODE} -gt 0 ] && echo "Submitting : ${DATAPKT}"
+
+		[ ! "${NETCATWAIT}" = "0" ] && FLAGS="-w ${NETCATTIMEOUT}"
+		echo "${DATAPKT}" | nc ${FLAGS} ${GRAPHITE} ${GRAPHITEPORT}
 	else
 		logger -p syslog.info -t "sysmetrics" "Attempt to send output to Graphite failed due to netcat not being available on system"
 	fi
@@ -178,7 +189,7 @@ function SendToGraphite()
 # Parameters : [metric category] [metric name] [metric value]
 function SubmitMetric()
 {
-	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "SubmitMetric"
+	DebugMsg "SubmitMetric"
 
 	if [ ! "${LOGHOST}" = "none" ]; then
 		mesg="${1} ${2} ${3}"
@@ -204,7 +215,7 @@ function SubmitMetric()
 # Parameters : [profile file path]
 function LoadProfile()
 {
-	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "LoadProfile"
+	DebugMsg "LoadProfile"
 
 	while read label value value2 value3 value4 value5 value6; do
 		case "${label}" in
@@ -227,7 +238,9 @@ function LoadProfile()
 			processes[${processCount}]="${value},${value2},${value3},${value4},${value5}"
 			processCount=$(( ${processCount} + 1 )) ;;
 		"graphite")
-			GRAPHITE="${value}" ;;
+			GRAPHITE="${value}"
+			[ ! "${value2}" = "" ] && GRAPHITEPORT="${value2}"
+			;;
 		"loghost")
 			LOGHOST="${value}" ;;
 		"meminfo")
@@ -256,6 +269,8 @@ function LoadProfile()
 # Parameters : [node #]
 function Heartbeat()
 {
+	DebugMode "Entering HeartBeat"
+
 	SubmitMetric "heartbeat" "node" "${1}"
 }
 
@@ -263,6 +278,8 @@ function Heartbeat()
 # Parameters : None, uses processes array
 function CheckProcesses()
 {
+	DebugMsg "Entering CheckProcesses"
+
 	for ((index=0; index < ${#processes[@]}; ++index)); do
 		IFS="," read -r operation pname puser plabel pvalue <<< "${processes[${index}]}"
 
@@ -299,7 +316,7 @@ function CheckProcesses()
 # Parameters : thermalzones Array
 function ReadTempSensors()
 {
-	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "ReadTempSensors"
+	DebugMsg "ReadTempSensors"
 
 	for ((index=0; index < ${#thermalzones[@]}; ++index)); do
 		zone="${thermalzones[${index}]}"
@@ -321,7 +338,7 @@ function ReadTempSensors()
 # Parameters : Sensors array
 function ReadSensors()
 {
-	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "ReadSensors"
+	DebugMsg "ReadSensors"
 
 	for ((index=0; index < ${#sensors[@]}; ++index)); do
 		sensor="${sensors[${index}]}"
@@ -336,7 +353,7 @@ function ReadSensors()
 # Parameters : None
 function GetDrives()
 {
-	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "GetDrives"
+	DebugMsg "GetDrives"
 
 	local -a drvs
 	local -a lbls
@@ -363,7 +380,7 @@ function GetDrives()
 # Paremeters : None
 function GetMemInfo()
 {
-	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "GetMemInfo"
+	DebugMsg "GetMemInfo"
 
 	total=$(cat /proc/meminfo | grep "MemTotal" | tr -s " " | cut -d" " -f2)
 	free=$(cat /proc/meminfo | grep "MemFree" | tr -s " " | cut -d" " -f2)
@@ -377,7 +394,7 @@ function GetMemInfo()
 # Parameters: None
 function GetUptimeInfo()
 {
-	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "GetUptimeInfo"
+	DebugMsg "GetUptimeInfo"
 
 	output="$(uptime)"
 
@@ -455,7 +472,7 @@ function GetUptimeInfo()
 # Parameters : none
 function GetPingHosts()
 {
-	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "GetPingHosts"
+	DebugMsg "GetPingHosts"
 
 	for ((index=0; index < ${#pinghosts[@]}; ++index)); do
 		IFS="," read -r lbl host port <<< "${pinghosts[${index}]}"
@@ -494,7 +511,7 @@ function GetPingHosts()
 # Parameters : none
 function GetTraceroutes()
 {
-	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "GetTraceroutes"
+	DebugMsg "GetTraceroutes"
 
 	for ((index=0; index < ${#traceroutes[@]}; ++index)); do
 		IFS="," read -r lbl host <<< "${traceroutes[${index}]}"
@@ -509,7 +526,7 @@ function GetTraceroutes()
 # Parameters : none
 function GetServices()
 {
-	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "GetServices"
+	DebugMsg "GetServices"
 
 	for ((index=0; index < ${#services[@]}; ++index)); do
 		IFS="," read -r lbl service url sum presentvalue  <<< "${services[${index}]}"
@@ -547,7 +564,7 @@ function GetServices()
 sysmetricsver="${MAJORVER}.${MINORVER}"
 export sysmetricsver
 
-[ ${DEBUGMODE} -gt 0 ] && DebugMsg "Entering Main Loop - Parsing Args"
+DebugMsg "Entering Main Loop - Parsing Args"
 
 while [ ! "${1}" = "" ]; do
 	case "${1}" in
@@ -560,7 +577,10 @@ while [ ! "${1}" = "" ]; do
 		MyVersion
 		exit 1 ;;
 	"-x")	DEBUGMODE=1
-		DIAGMODE=1 ;;
+		DIAGMODE=0 ;;
+	"-xx")	DIAGMODE=1
+		DEBUGMODE=1 ;;
+	"-nw")	NETCATWAIT=1 ;;
 	"-hb")	HEARTBEAT="${2}"
 		shift 1 ;;
 	"-g")	GRAPHITE="${2}"
@@ -602,11 +622,17 @@ elif [ ${excessargsCount} -gt 0 ]; then
 	done
 fi
 
+# Debug Mode is basically a simulation with a step by step printout of what the script is doing, no values are submitted
+# Diag Mode is Debug Mode, but values are still submitted
 if [ ${DEBUGMODE} -gt 0 ]; then
-	[ ${DEBUGMODE} -gt 0 ] && DebugMsg "Forcing DebugMode"
+	DebugMsg "Forcing DebugMode"
 
 	LOGHOST=print
-	GRAPHITE=none
+	if [ ${DIAGMODE} -eq 0 ]; then
+		GRAPHITE=none
+	else
+		DebugMsg "Forcing DiagMode - Values Will Be Submitted"
+	fi
 fi
 
 [ ${#thermalzones[@]} -gt 0 ] &&  ReadTempSensors
