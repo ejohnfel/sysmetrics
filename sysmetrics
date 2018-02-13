@@ -1,7 +1,7 @@
 #!/bin/bash
 
 MAJORVER=0
-MINORVER=30
+MINORVER=32
 
 DEBUGMODE=0
 DIAGMODE=0
@@ -178,8 +178,6 @@ function SendToGraphite()
 
 		[ ${NETCATWAIT} -gt 0 ] && FLAGS="-w ${NETCATWAIT}"
 		echo "${DATAPKT}" | nc ${FLAGS} ${GRAPHITE} ${GRAPHITEPORT}
-	else
-		logger -p syslog.info -t "sysmetrics" "Attempt to send output to Graphite failed due to netcat not being available on system"
 	fi
 }
 
@@ -238,7 +236,7 @@ function LoadProfile()
 			[ ! "${value2}" = "" ] && GRAPHITEPORT="${value2}"
 			;;
 		"netcatwait")
-			NETCATWAIT=${NETCATWAITTIMEOUT}
+			NETCATWAIT=${NETCATTIMEOUT}
 			[ ! "${value2}" = "" ] && NETCATWAIT=${value2}
 			;;
 		"loghost")
