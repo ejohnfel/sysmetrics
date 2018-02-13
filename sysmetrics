@@ -267,7 +267,7 @@ function LoadProfile()
 # Parameters : [node #]
 function Heartbeat()
 {
-	DebugMode "Entering HeartBeat"
+	DebugMsg "Entering HeartBeat"
 
 	SubmitMetric "heartbeat" "node" "${1}"
 }
