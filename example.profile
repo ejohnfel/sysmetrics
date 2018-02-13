@@ -35,6 +35,10 @@ loghost none
 # heartbeat [node #]
 # heartbeat 24
 
+# Netcat Wait : Force netcat into wait mode, optionally set a non-zero seconds to wait time
+# netcatwait [seconds to wait]
+# netcatwait 2
+
 # Proccess Check : The present value should be a non-zero unique identifier for the process which will be represented,
 # as a line on the Y axis of the grid, "cmdlist" is same as "ps -C", see man page for "ps"
 # when usng "expr" "cmdlist" can be a process name or an extended regular expression.

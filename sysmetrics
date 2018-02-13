@@ -38,7 +38,7 @@ UPTIME=0
 HEARTBEAT=none
 PINGCOUNT=2
 PORTPING=nping
-NETCATWAIT=no
+NETCATWAIT=0
 NETCATTIMEOUT=2
 
 PROGNAME=sysmetrics
@@ -178,7 +178,7 @@ function SendToGraphite()
 
 		[ ${DIAGMODE} -gt 0 ] && echo "Submitting : ${DATAPKT}"
 
-		[ ! "${NETCATWAIT}" = "0" ] && FLAGS="-w ${NETCATTIMEOUT}"
+		[ ${NETCATWAIT} -gt 0 ] && FLAGS="-w ${NETCATTIMEOUT}"
 		echo "${DATAPKT}" | nc ${FLAGS} ${GRAPHITE} ${GRAPHITEPORT}
 	else
 		logger -p syslog.info -t "sysmetrics" "Attempt to send output to Graphite failed due to netcat not being available on system"
@@ -240,6 +240,10 @@ function LoadProfile()
 		"graphite")
 			GRAPHITE="${value}"
 			[ ! "${value2}" = "" ] && GRAPHITEPORT="${value2}"
+			;;
+		"netcatwait")
+			NETCATWAIT=${NETCATWAITTIMEOUT}
+			[ ! "${value2}" = "" ] && NETCATWAIT=${value2}
 			;;
 		"loghost")
 			LOGHOST="${value}" ;;
