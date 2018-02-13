@@ -172,7 +172,7 @@ function SendToGraphite()
 
 	if [ ! "${GRAPHITE}" = "none" ]; then
 		FLAGS=""
-		DATAPKT="sysmetrics.${HOSTNAME}.${2}.${2} ${3} `date +%s`"
+		DATAPKT="sysmetrics.${HOSTNAME}.${1}.${2} ${3} `date +%s`"
 
 		[ ${DIAGMODE} -gt 0 ] && echo "Submitting : ${DATAPKT}"
 
