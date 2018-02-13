@@ -126,7 +126,7 @@ function CheckApps()
 		apt-get -y install bc
 	fi
 
-	nc > /dev/null 2>&1
+	nc -w 1 > /dev/null 2>&1
 
 	if [ $? -eq 127 ]; then
 		apt-get -y install netcat-openbsd
@@ -170,9 +170,7 @@ function SendToGraphite()
 {
 	DebugMsg "SendToGraphite"
 
-	nc > /dev/null 2>&1
-
-	if [ $? -lt 127 -a ! "${GRAPHITE}" = "none" ]; then
+	if [ ! "${GRAPHITE}" = "none" ]; then
 		FLAGS=""
 		DATAPKT="sysmetrics.${HOSTNAME}.${2}.${2} ${3} `date +%s`"
 
@@ -206,9 +204,7 @@ function SubmitMetric()
 		esac
 	fi
 
-	if [ ! "${GRAPHITE}" = "none" ]; then
-		SendToGraphite "${1}" "${2}" "${3}"
-	fi
+	SendToGraphite "${1}" "${2}" "${3}"
 }
 
 # Load Profile
