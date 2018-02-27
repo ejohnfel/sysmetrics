@@ -365,9 +365,7 @@ function GetDrives()
 	done
 
 	for ((index=0; index < ${#drvs[@]}; ++index)); do
-		DebugMsg "DF Output : -${drvs[${index}]}-"
 		IFS=" " read -r drive size used available percent mounted rem <<< "${drvs[${index}]}"
-		DebugMsg "Percent ${percent} / ${percent%%%}"
 		lbl=${lbls[${index}]}
 
 		SubmitMetric "drive.space.used" "${lbl}" "${used%%M}"
