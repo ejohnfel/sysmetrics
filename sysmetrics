@@ -40,7 +40,7 @@ PINGCOUNT=2
 PORTPING=nping
 NETCATWAIT=0
 NETCATTIMEOUT=2
-
+NETCATARGS="-N"
 PROGNAME=sysmetrics
 REPOSITORY=https://github.com/ejohnfel/${PROGNAME}
 
@@ -176,8 +176,11 @@ function SendToGraphite()
 
 		[ ${DIAGMODE} -gt 0 ] && echo "Submitting : ${DATAPKT}"
 
-		[ ${NETCATWAIT} -gt 0 ] && FLAGS="-w ${NETCATWAIT}"
-		echo "${DATAPKT}" | nc ${FLAGS} ${GRAPHITE} ${GRAPHITEPORT}
+		[ "${NETCATARGS}" != "" ] && FLAGS="${NETCATARGS}"
+		[ ${NETCATWAIT} -gt 0 ] && FLAGS="${FLAGS} -w ${NETCATWAIT}"
+
+		CMDLINE="${FLAGS} ${GRAPHITE} ${GRAPHITEPORT}"
+		echo "${DATAPKT}" | nc ${CMDLINE}
 	fi
 }
 
